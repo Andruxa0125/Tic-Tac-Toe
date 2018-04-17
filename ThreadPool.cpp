@@ -3,36 +3,55 @@
 #include <functional>
 #include <mutex>
 #include <vector>
+#include "ThreadPool.h"
 
 using namespace std;
 
-typedef function<void(void)> job_function;
-
-class ThreadPool
-{
-private:
-	queue<job_function> jobQueue;
-	std::mutex mutex;
-	vector<thread> threads;
-	bool running;
-public:
-	virtual ~ThreadPool();
-	ThreadPool(size_t size = 5);
-	void addJob(job_function job);
-	void clearJobs();
-};
-
-ThreadPool::ThreadPool(size_t numThreads)
-{
+ThreadPool::ThreadPool(size_t numThreads){
 	running = true;
 	threads.reserve(numThreads);
-	//for (int i = 0; i < numThreads; i++)
-	//	threads.push_back(thread);
+	numIdleThreads = numThreads;
+	auto thread_loop = [&](size_t id) {
+		while (running)
+		{
+			mu.lock();
+			if (areJobsDone())
+			{
+				mainThread.notify_one();
+			}
+			if (!jobQueue.empty())
+			{
+				numIdleThreads--;
+				auto job = jobQueue.front();
+				jobQueue.pop();
+				mu.unlock();
+				job();
+				mu.lock();
+				numIdleThreads++;
+				mu.unlock();
+			}
+			else
+			{
+				mu.unlock();
+				unique_lock<mutex> mlock(mu);
+				//condVar.wait(mlock, [&] { return !(jobQueue.empty() && running); });
+				while (jobQueue.empty() && running)
+				{
+					condVar.wait(mlock);
+				}
+			}
+		}
+	};
+	for (int i = 0; i < numThreads; i++)
+	{
+		threads.push_back(thread(thread_loop, i));
+	}
 }
 
 ThreadPool::~ThreadPool()
 {
 	running = false; // the loop won't run anymore
+	condVar.notify_all(); // notify all other threads so that they stop waiting
 	for (thread& t : threads)
 	{
 		t.join(); // main thread will have to wait for all thread 
@@ -41,16 +60,38 @@ ThreadPool::~ThreadPool()
 
 void ThreadPool::addJob(job_function job)
 {
-	mutex.lock();
+	lock_guard<mutex> lck(mu);
+	if (jobQueue.size() == 0)
+		condVar.notify_one();
 	jobQueue.push(job);
-	mutex.unlock();
 }
 
 void ThreadPool::clearJobs()
 {
 	queue<job_function> empty;
 	// may be deal with the size
-	mutex.lock();
+	lock_guard<mutex> lock(mu);
 	swap(jobQueue, empty);
-	mutex.unlock();
+}
+
+bool ThreadPool::areJobsDone()
+{
+	return jobQueue.empty() && numIdleThreads == threads.size();
+}
+
+void ThreadPool::addJobs(vector<job_function> jobs)
+{
+	mu.lock();
+	//cout << "Adding many jobs!" << endl;
+	for(auto job : jobs)
+		jobQueue.push(job);
+	mu.unlock();
+	condVar.notify_all();
+}
+	
+void ThreadPool::waitForJobs()
+{
+	unique_lock<mutex> lck(mu);
+	while (!this->areJobsDone())
+		mainThread.wait(lck);
 }

@@ -6,19 +6,6 @@
 
 using namespace std;
 
-//class TicTacToe
-//{
-//private:
-//	static constexpr int THICKNESS = 20;
-//	int WIDTH;
-//	int HEIGHT;
-//	sf::Vector2f standardX;
-//	sf::Vector2f standardY;
-//public:
-//	TicTacToe(int width, int height);
-//	void startGame();
-//};
-
 void TicTacToe::fillMap()
 {
 	map[0] = make_pair(0, 0);
@@ -42,8 +29,9 @@ void TicTacToe::fillMap()
 
 TicTacToe::TicTacToe(int width, int height)
 {
-	BASE_COLOR = sf::Color::Cyan;
-	cross = true;
+	BASE_COLOR = sf::Color::White;
+	gameOver = false;
+	gameStarted = false;
 	WIDTH = width;
 	HEIGHT = height;
 	fillMap();
@@ -77,7 +65,7 @@ void  TicTacToe::fillCell(int row, int col)
 		circle->setPosition(leftCornerX + 10, leftCornerY + 10);
 		circle->setRadius(WIDTH / 6 - 20);
 		circle->setFillColor(BASE_COLOR);
-		circle->setOutlineColor(sf::Color::Red);
+		circle->setOutlineColor(sf::Color::Blue);
 		circle->setOutlineThickness(THICKNESS / 2);
 		shapes.push_back(circle);
 		return;
@@ -99,6 +87,16 @@ void  TicTacToe::fillCell(int row, int col)
 
 	shapes.push_back(diag1);
 	shapes.push_back(diag2);
+}
+
+void  TicTacToe::addText(string message)
+{
+	txt->setCharacterSize(50);
+	txt->setStyle(sf::Text::Bold);
+	txt->setFillColor(sf::Color::Magenta);
+	txt->setPosition(WIDTH / 5, HEIGHT / 2);
+	txt->setString(message);
+	shapes.push_back(txt);
 }
 
 vector<sf::Drawable*> TicTacToe::createShapes()
@@ -145,13 +143,20 @@ void TicTacToe::startGame()
 {
 	sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "Tic-Tac-Toe");
 	window.clear(sf::Color::Green);
+	sf::Font font;
+	// Load it from a file
+	if (!font.loadFromFile("resources/sansation.ttf"))
+	{
+		std::cout << "Error loading font\n";
+	}
+	txt = new sf::Text();
+	txt->setFont(font);
 
 	vector<sf::Drawable*> objects = createShapes(); // this will create all the lines for Tic-Tac-Toe
 	for (int i = 0; i < objects.size(); i++)
 	{
 		shapes.push_back(objects[i]);
 	}
-
 	bool compute = false;
 	while (window.isOpen())
 	{
@@ -162,7 +167,7 @@ void TicTacToe::startGame()
 		{
 			if (event.type == sf::Event::Closed)
 				window.close();
-			if (event.type == sf::Event::MouseButtonPressed)
+			if (event.type == sf::Event::MouseButtonPressed && !gameOver && gameStarted)
 			{
 				int mouseX = event.mouseButton.x;
 				int mouseY = event.mouseButton.y;
@@ -250,6 +255,31 @@ void TicTacToe::startGame()
 					}
 				}
 				compute = true;
+				int checkGridRes = Analyzer::checkGrid(grid);
+				if (checkGridRes > -1)
+				{
+					gameOver = true;
+					compute = false;
+					//int result = Analyzer::checkGrid(grid);
+					cout << "TOTAL TIME ELAPSED FOR COMPUTATION" << analyzer.getTotalTime() << endl;
+					if (checkGridRes == 2) // it is a draw
+						addText("I will win next time.");
+					else
+						addText("You won. Lucky human.");
+					cout << "human won.";
+				}
+			}
+			else if (event.type == sf::Event::KeyPressed && !gameStarted) {
+				cout << "keyboard pressed" << endl;
+				srand(time(NULL));
+				cross = rand() % 2;
+				gameStarted = true;
+				if (event.key.code == sf::Keyboard::Num1) { // human wants to play first
+					compute = false;
+				}
+				else if (event.key.code == sf::Keyboard::Num2) { // human wants to play second
+					compute = true;
+				}
 			}
 		}
 		window.clear(BASE_COLOR);
@@ -258,13 +288,27 @@ void TicTacToe::startGame()
 		if (compute)
 		{
 			compute = false;
-			Analyzer a(grid, cross);
-			pair<int, int> res = a.getNextMove();
+			analyzer.setMatrixAndPlayer(grid, cross);
+			//pair<int, int> res = analyzer.getNextMove();
+			pair<int, int> res = analyzer.getNextMoveUsingThreads();
+			cout << "returned from there ";
 			cout << "the final result is " << res.first << " and " << res.second << endl;
-			fillCell(res.first, res.second);
+			fillCell(res.first, res.second);	
 			window.clear(BASE_COLOR);
 			drawShapes(window);
 			window.display();
+			int result = Analyzer::checkGrid(grid);
+			if (result > -1)
+			{
+				cout << "TOTAL TIME OF COMPUTATION " << analyzer.getTotalTime() << endl;
+				gameOver = true;
+				if(result == 2) // it is a draw
+					addText("I will win next time.");
+				else
+					addText("I won. Ha-ha :)");
+				// add getting total time here.
+				cout << "bot won";
+			}
 		}
 	}
 }
